@@ -1,9 +1,11 @@
 mod define_args;
 
 use std::fs::File;
-use std::io::Write;
+use std::{fs, io};
+use std::io::{BufRead, Write};
+use std::path::Path;
 
-use reqwest::{Client, Error, Response, header};
+use reqwest::{Client, Error, Response, header, StatusCode};
 use clap::Parser;
 use regex::Regex;
 use serde::Serialize;
@@ -42,37 +44,51 @@ fn create_params<'a>(text: &'a str,language_input:&'a str,language_output:&'a st
     return params
 }
 
+fn read_key() -> Result<String, std::io::Error> {
+    fs::read_to_string("key.txt")
+}
+
 async fn get_translation(params: Vec<(&str, &str)>) -> Result<()> {
         let client = Client::new();
+
+        let key = fs::read_to_string("key.txt")?;
+        let auth_header = format!("DeepL-Auth-Key {}", key.trim());
+        println!("{}",key);
         let response: Response = client.post(URL_API)
-            .header("Authorization", "DeepL-Auth-Key 104fa937-067d-ed70-11c3-7faa51a52fd8:fx")
+            .header("Authorization",auth_header)
             .form(&params)
             .send()
             .await?;
 
         println!("Status: {}", response.status());
-        let resp_text = response.text().await.context("Errore durante la lettura della risposta")?;
-        println!("Body: {}", resp_text);
 
-        let parsed_response: Value = serde_json::from_str(&resp_text).context("Errore durante il parsing del JSON")?;
+        if response.status().as_str() == "403" {
+            println!("The key is not valid sorry");
+        }else{
+            let resp_text = response.text().await.context("Errore durante la lettura della risposta")?;
+            println!("Body: {}", resp_text);
 
-        if let Some(message_value) = parsed_response.get("message").and_then(serde_json::Value::as_str) {
-            println!("Sorry, an error occurred: {:?}", message_value);
-        } else {
-            if let Some(Value::Array(array)) = parsed_response.get("translations") {
-                if let Some(Value::Object(obj)) = array.get(0) {
-                    if let Some(Value::String(text)) = obj.get("text") {
-                        println!("The translated text is: {}", text);
+            let parsed_response: Value = serde_json::from_str(&resp_text).context("Errore durante il parsing del JSON")?;
+
+            if let Some(message_value) = parsed_response.get("message").and_then(serde_json::Value::as_str) {
+                println!("Sorry, an error occurred: {:?}", message_value);
+            } else {
+                if let Some(Value::Array(array)) = parsed_response.get("translations") {
+                    if let Some(Value::Object(obj)) = array.get(0) {
+                        if let Some(Value::String(text)) = obj.get("text") {
+                            println!("The translated text is: {}", text);
+                        } else {
+                            println!("Il campo 'text' non è presente o non è una stringa");
+                        }
                     } else {
-                        println!("Il campo 'text' non è presente o non è una stringa");
+                        println!("Il primo elemento dell'array non è un oggetto");
                     }
                 } else {
-                    println!("Il primo elemento dell'array non è un oggetto");
+                    println!("La chiave non esiste o non è associata a un array");
                 }
-            } else {
-                println!("La chiave non esiste o non è associata a un array");
             }
         }
+
         Ok(())
     }
 
