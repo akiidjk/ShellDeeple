@@ -16,7 +16,7 @@ ShellDeeple is a Rust script designed to provide simple, direct access to the De
 1. Obtain a deeple key api (required)
 2. Download the executable
     * **Only for Linux** If you want to use the software anywhere you need to copy or move the executable to the bin directory with this command `sudo mv sd /usr/local/bin/` or `sudo cp sd /usr/local/bin/` **'sd'** is the name of the executable, if you have another command with **sd** I recommend you rename the executable first. 
-3. Run the command or the executable with `sd -i -k {key of deeple (without the staples)}`
+3. Run the command or the executable with `sudo sd -i -k {key of deeple (without the staples)}`
 
 ## Use and example
 
