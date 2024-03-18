@@ -1,23 +1,17 @@
 mod define_args;
 
 use std::fs::File;
-use std::{fs, io};
-use std::io::{BufRead, Write};
-use std::path::Path;
+use std::{env, fs};
+use std::io::{Write};
 
-use reqwest::{Client, Error, Response, header, StatusCode};
+use reqwest::{Client, Response};
 use clap::Parser;
 use regex::Regex;
-use serde::Serialize;
 use serde_json::Value;
-// use colored::Colorize;
 use anyhow::{Result, Context};
-
-//TODO USE THE COLORED
-
+use colored::Colorize;
 
 static URL_API: &str = "https://api-free.deepl.com/v2/translate";
-
 
 fn create_params<'a>(text: &'a str,language_input:&'a str,language_output:&'a str, context:&'a str, preserve_formatting: bool, formality:&'a str) -> Vec<(&'a str, &'a str)>{
     let mut params = vec![
@@ -44,68 +38,85 @@ fn create_params<'a>(text: &'a str,language_input:&'a str,language_output:&'a st
     return params
 }
 
-fn read_key() -> Result<String, std::io::Error> {
-    fs::read_to_string("key.txt")
+fn display_generic_error(){
+    log::error!("An error occurred during the translation ")
+}
+
+fn read_key() -> std::io::Result<String> {
+    let path:&str = get_path();
+    fs::read_to_string(path)
 }
 
 async fn get_translation(params: Vec<(&str, &str)>) -> Result<()> {
         let client = Client::new();
 
-        let key = fs::read_to_string("key.txt")?;
+        let key = read_key().expect("Error in the read of string");
         let auth_header = format!("DeepL-Auth-Key {}", key.trim());
-        println!("{}",key);
+
+        log::debug!("{}",key);
         let response: Response = client.post(URL_API)
             .header("Authorization",auth_header)
             .form(&params)
             .send()
             .await?;
 
-        println!("Status: {}", response.status());
-
+        log::debug!("Status: {}", response.status());
         if response.status().as_str() == "403" {
-            println!("The key is not valid sorry");
+            log::error!("The key is not valid sorry");
         }else{
-            let resp_text = response.text().await.context("Errore durante la lettura della risposta")?;
-            println!("Body: {}", resp_text);
+            let resp_text = response.text().await.context("Error during the read of request")?;
+            log::debug!("Body: {}", resp_text);
 
-            let parsed_response: Value = serde_json::from_str(&resp_text).context("Errore durante il parsing del JSON")?;
+            let parsed_response: Value = serde_json::from_str(&resp_text).context("Error during the parsing of json")?;
 
             if let Some(message_value) = parsed_response.get("message").and_then(serde_json::Value::as_str) {
-                println!("Sorry, an error occurred: {:?}", message_value);
+                log::error!("Sorry, an error occurred: {:?}", message_value);
             } else {
                 if let Some(Value::Array(array)) = parsed_response.get("translations") {
                     if let Some(Value::Object(obj)) = array.get(0) {
                         if let Some(Value::String(text)) = obj.get("text") {
-                            println!("The translated text is: {}", text);
+                            log::info!("The translated text is: '{}'", text.purple())
                         } else {
-                            println!("Il campo 'text' non è presente o non è una stringa");
+                            display_generic_error();
                         }
                     } else {
-                        println!("Il primo elemento dell'array non è un oggetto");
+                        display_generic_error();
                     }
                 } else {
-                    println!("La chiave non esiste o non è associata a un array");
+                    display_generic_error();
                 }
             }
         }
-
         Ok(())
     }
 
 
+fn get_path() -> &'static str {
+    return if cfg!(target_os = "windows") {
+        "C:\\ProgramData\\shellDeeple"
+    } else {
+        "/etc/shellDeeple"
+    }
+}
 fn config(api_key: &str){
+
     let regex_key: Regex = Regex::new(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:fx$").unwrap();
 
-    if api_key == "" {
-        println!("You need to specify the key of api");
+    if api_key.is_empty() {
+        log::error!("You need to specify the key of api");
         return
     }else if !regex_key.is_match(api_key) {
-        println!("The key insert is not a valid key");
+        log::error!("The key insert is not a valid key");
         return
     }
 
-    let mut file = File::create("key.txt")
-            .expect("Error in the creation of config key file");
+    let path:&str = get_path();
+
+    fs::create_dir_all(path).expect("Error creating directory");
+
+    let file_path = format!("{}/.key-deeple", path);
+    let mut file = File::create(file_path)
+        .expect("Error in the creation of config key file");
 
     file.write_all(&*api_key.as_bytes())
         .expect("Error in the writing of config key file");
@@ -115,7 +126,9 @@ fn config(api_key: &str){
 
 #[tokio::main]
 async fn main() {
-    println!("START");
+    env::set_var("RUST_LOG", "info");
+    env_logger::init();
+
     let args = define_args::Args::parse();
 
     //Params tranlations
@@ -130,26 +143,29 @@ async fn main() {
     let is_config:bool = args.is_config;
     let api_key:String = args.key;
 
-    println!("Input: {}",text);
-    println!("Source lang: {}",language_input);
-    println!("Target lang: {}",language_output);
-    println!("Context: {}",context);
-    println!("Preserve formatting: {}",preserve_formatting);
-    println!("Formality; {}",formality);
-    println!("To config: {}",is_config);
-    println!("Key: {}",api_key);
+    log::debug!("Input: {}",text);
+    log::debug!("Source lang: {}",language_input);
+    log::debug!("Target lang: {}",language_output);
+    log::debug!("Context: {}",context);
+    log::debug!("Preserve formatting: {}",preserve_formatting);
+    log::debug!("Formality; {}",formality);
+    log::debug!("To config: {}",is_config);
+    log::debug!("Key: {}",api_key);
 
     if is_config {
         config(&api_key);
     } else {
         if text.is_empty() {
-            println!("You need to specify a text to translate");
+            log::error!("You need to specify a text to translate");
         }else {
             let params:Vec<(&str,&str)> = create_params(&text, &language_input, &language_output, &context, preserve_formatting, &formality);
-            get_translation(params).await.expect("TODO: panic message");}
+            get_translation(params).await.expect("Error occurred");}
     }
 
-
-
-
 }
+
+// log::error!("Questo è un messaggio di errore");
+// log::warn!("Questo è un messaggio di avviso");
+// log::info!("Questo è un messaggio informativo");
+// log::debug!("Questo è un messaggio di debug");
+// log::trace!("Questo è un messaggio di trace");
