@@ -44,7 +44,8 @@ fn display_generic_error(){
 
 fn read_key() -> std::io::Result<String> {
     let path:&str = get_path();
-    fs::read_to_string(path)
+    let file_path = format!("{}/.key-deeple", path);
+    fs::read_to_string(file_path)
 }
 
 async fn get_translation(params: Vec<(&str, &str)>) -> Result<()> {
