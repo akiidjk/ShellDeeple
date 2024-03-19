@@ -39,3 +39,9 @@ You can specify the source language and the target language with
 
 The languages are written in short form, and the list of all available languages and the explanation of all commands can be obtained with
 `sd --help`
+
+
+## RoadMap
+
+- [ ] File traduction
+- [ ] Better error management
